@@ -6,19 +6,46 @@
 
 using namespace std;
 
-vector<double> operator+(const vector<double>& lhs, const vector<double>& rhs){
-    vector<double> result;
-    for(int i=0;i<lhs.size();i++){
-        result.push_back(lhs[i]+rhs[i]);
-    }
-    return result;
-}
-
-
 vector<double> operator*(const double& lhs, const vector<double>& rhs){
     vector<double> result;
     for(int i=0;i<rhs.size();i++){
         result.push_back(lhs*rhs[i]);
+    }
+    return result;
+}
+
+vector<vector<double>> operator*(const double lhs, const vector<vector<double>>& rhs){
+    int m = rhs.size();
+    int n = rhs[0].size();
+    vector<vector<double>> result = rhs;
+    for(int i=0 ; i<m ; i++) {
+        for(int j=0; j<n ; j++) {
+            result[i][j] = result[i][j]*lhs;
+        }
+    }
+    return result;
+}
+
+vector<vector<double>> operator-(const double lhs, const vector<vector<double>>& rhs){
+    int m = rhs.size();
+    int n = rhs[0].size();
+    vector<vector<double>> result = rhs;
+    for(int i=0 ; i<m ; i++) {
+        for(int j=0; j<n ; j++) {
+            result[i][j] = lhs - result[i][j];
+        }
+    }
+    return result;
+}
+
+vector<vector<double>> operator+(const vector<vector<double>>& lhs, const vector<vector<double>>& rhs){
+    int m = rhs.size();
+    int n = rhs[0].size();
+    vector<vector<double>> result = rhs;
+    for(int i=0 ; i<m ; i++) {
+        for(int j=0; j<n ; j++) {
+            result[i][j] = lhs[i][j] + result[i][j];
+        }
     }
     return result;
 }
@@ -70,6 +97,16 @@ vector<vector<T> > sliceMatrix(const vector<vector<T> >& mat, int r1, int c1, in
     return result;
 }
 
+vector<vector<double> > log2d(const vector<vector<double> > & mat){
+    vector<vector<double> > result = mat;
+    for(int i=0;i<mat.size();i++){
+        for(int j=0;j<mat[0].size();j++){
+            result[i][j] = log(mat[i][j]);
+        }
+    }
+    return result;
+}
+
 template<typename T>
 vector<vector<T> > matadd(const vector<vector<T> >& mat1, const vector<vector<T> >& mat2){
     int r1 = mat1.size();
@@ -94,48 +131,6 @@ vector<vector<T> > matadd(const vector<vector<T> >& mat1, const vector<vector<T>
     } 
     return result;
 }
-
-// template<class T>
-// vector<vector<T> > matmul(vector<vector<T> >& mat1, vector<vector<T> >& mat2, vector<int> vals, bool t1 = false, bool t2 = false) {
-    
-//     // General Matrix Multiplier function
-
-//     if (t1) mat1 = Transpose(mat1);
-//     if (t2) mat2 = Transpose(mat2);
-
-//     int row1_s = vals[0];
-//     int col1_s = vals[1];
-//     int row1_e = vals[2];
-//     int col1_e = vals[3];
-
-//     int row2_s = vals[4];
-//     int col2_s = vals[5];
-//     int row2_e = vals[6];
-//     int col2_e = vals[7];
-
-//     if(row1_e==0) row1_e = mat1.size();
-//     if(row2_e==0) row2_e = mat2.size();
-//     if(col1_e==0) col1_e = mat1[0].size();
-//     if(col2_e==0) col2_e = mat2[0].size();
-//     assert(col1_e-col1_s==row2_e-row2_s);
-
-    
-//     vector<vector<T> > result(row1_e-row1_s, vector<T>(col2_e-col2_s));
-    
-//     for(int i=0 ; i<row1_e-row1_s ; i++) {
-//         for(int j=0; j<col2_e-col2_s ; j++) {
-//             for(int k=0 ; k<col1_e-col1_s ; k++) {
-//                 // cout << i << " " << j <<" " <<  k << " " << mat1[i][col1_s+k]*mat2[row2_s+k][j] << endl;
-//                 result[i][j] = result[i][j] + mat1[row1_s+i][col1_s+k]*mat2[row2_s+k][col2_s+j];
-//             }
-//         }
-//     }
-
-//     if (t1) mat1 = Transpose(mat1);
-//     if (t2) mat2 = Transpose(mat2);
-
-//     return result;
-// }
 
 template<class T>
 vector<vector<T> > matmul(vector<vector<T> >& mat1, vector<vector<T> >& mat2, bool t1 = false, bool t2 = false) {
@@ -176,7 +171,7 @@ vector<vector<T> > elementwisemult(const vector<vector<T> >& mat1,const vector<v
 }
 
 template<class T>
-vector<T> matsum(const vector<vector<T> >& mat, int axis = 0) {
+vector<T> matsum(const vector<vector<T> >& mat, int axis = -1) {
     int m = mat.size();
     int n = mat[0].size();
     unordered_map<double,double> count;
@@ -185,35 +180,13 @@ vector<T> matsum(const vector<vector<T> >& mat, int axis = 0) {
     for(int i=0 ; i<m ; i++) {
         for(int j=0; j<n ; j++) {
             if(axis==0) count[j] = count[j]+mat[i][j];
-            else count[j] = count[j]+mat[i][j];
+            else if(axis==1) count[j] = count[j]+mat[i][j];
+            else count[0] = count[0] + mat[i][j];
         }
     }
     if(axis==0) for(int i=0;i<n;i++) result.push_back(count[i]);
-    else for(int j=0;j<m;j++) result.push_back(count[j]);
+    else if(axis==-1) for(int j=0;j<m;j++) result.push_back(count[j]);
+    else result.push_back(count[0]);
     
-    return result;
-}
-
-vector<vector<double>> operator*(const double lhs, const vector<vector<double>>& rhs){
-    int m = rhs.size();
-    int n = rhs[0].size();
-    vector<vector<double>> result = rhs;
-    for(int i=0 ; i<m ; i++) {
-        for(int j=0; j<n ; j++) {
-            result[i][j] = result[i][j]*lhs;
-        }
-    }
-    return result;
-}
-
-vector<vector<double>> operator-(const double lhs, const vector<vector<double>>& rhs){
-    int m = rhs.size();
-    int n = rhs[0].size();
-    vector<vector<double>> result = rhs;
-    for(int i=0 ; i<m ; i++) {
-        for(int j=0; j<n ; j++) {
-            result[i][j] = lhs - result[i][j];
-        }
-    }
     return result;
 }
