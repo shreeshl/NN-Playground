@@ -1,3 +1,1 @@
-# NN-Playground
-
-Basic implementation of NN in c++. Code cleanup pending.
+Basic implementation of NN in c++ with/without eigen library. Code cleanup pending.
