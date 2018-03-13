@@ -10,34 +10,11 @@
 #include <cstdlib>
 #include <chrono>
 #include <cassert>
+#include <ctime>
 
 using namespace std;
 
 typedef vector<vector<double> > mat2d;
-
-mat2d sigmoid(mat2d &x) {
-    int m = x.size();
-    int n = x[0].size();
-    vector<vector<double>> result(m, vector<double>(n));
-    for(int i=0;i<m;i++){
-        for(int j=0;j<n;j++){
-            result[i][j] = exp(x[i][j]);
-        }
-    }
-    return result;
-}
-
-mat2d relu(mat2d &x) {
-    int m = x.size();
-    int n = x[0].size();
-    vector<vector<double>> result = x;
-    for(int i=0;i<m;i++){
-        for(int j=0;j<n;j++){
-            if (x[i][j]<=0) result[i][j] = 0;
-        }
-    }
-    return result;
-}
 
 struct Data{
     mat2d x;
@@ -52,13 +29,14 @@ class TrainingData{
 };
 
 Data TrainingData::getBatch(int batchsize){
+    if (batchsize==data.x.size()) return data;
     mat2d x;
     mat2d y;
     Data batch;
     while(batchsize!=0){
         int index = rand() % data.x.size();
         x.push_back(data.x[index]);
-        y.push_back(data.x[index]);
+        y.push_back(data.y[index]);
         batchsize--;
     }
     batch.x = x;
@@ -74,15 +52,15 @@ void TrainingData::load_data(string filename, int no_classes){
         if (!getline(infile, s)) break;
 
         istringstream ss(s);
-        vector<double> ytemp(no_classes,0);
+        vector<double> ytemp;
         vector<double> xtemp;
         bool first = true;
 
         while (ss){
             string d;
             if (!getline( ss, d, ',' )) break;
-            if (first) ytemp[stoi(d)%no_classes]=1;
-            else xtemp.push_back( stod(d)/255.0 );
+            if (first) ytemp.push_back(stod(d));
+            else xtemp.push_back( stod(d) );
             first = false;
         }
         data.y.push_back(ytemp);
@@ -97,9 +75,9 @@ void TrainingData::load_data(string filename, int no_classes){
 
 class Net{
     public:
-        vector<int> nodes = {10};
+        vector<int> nodes = {16,8,4};
         int num_layers;
-        double lr = 0.00001;
+        double lr = 0.3;
         double momentum = 0.9;
         unsigned iterations = 1000;
         double weight_decay = 0.04;
@@ -113,24 +91,69 @@ class Net{
 
         void init_params(int N, int D, int M);
         void forward(mat2d &x);
-        mat2d linearForward(mat2d &layer_input, mat2d &param, string activation);
-        
+        void linearForward(mat2d &layer_input, mat2d &param, string activation, int layer_id);
+        void sigmoid(const mat2d &x, int layer_id);
+        void relu(const mat2d &x, int layer_id);
+        void relu2(const mat2d &x, const mat2d &w, const mat2d &b, int layer_id);
         void backward(mat2d &y);
-        mat2d linearBackward(mat2d &received_msg, int layer_id, bool is_output_layer);
+        void linearBackward(mat2d &received_msg, int layer_id, bool is_output_layer);
+        
         void updateParam();
         
-        mat2d predictions(mat2d &x, mat2d &y);
+        mat2d predictions(mat2d &x);
         double calc_loss(mat2d &y);
         double calc_error(mat2d &ytrue);
 
 };
 
-vector<vector<double>> normalInit(int m, int n){
+void Net::sigmoid(const mat2d &x, int layer_id) {
+    int m = x.size();
+    int n = x[0].size();
+    mat2d result(m, vector<double>(n));
+    for(int i=0;i<m;i++){
+        for(int j=0;j<n;j++){
+            result[i][j] = 1/(1+exp(-1*x[i][j]));
+        }
+    }
+    outputs[layer_id] = result;
+    return;
+}
+
+void Net::relu(const mat2d &x, int layer_id) {
+    int m = x.size();
+    int n = x[0].size();
+    mat2d result = x;
+    for(int i=0;i<m;i++){
+        for(int j=0;j<n;j++){
+            if (x[i][j]<=0) result[i][j] = 0;
+        }
+    }
+    outputs[layer_id] = result;
+    return;
+}
+
+void Net::relu2(const mat2d &x, const mat2d &w, const mat2d &b, int layer_id) {
+    int m = x.size();
+    int n = w[0].size();
+    mat2d result(m,vector<double>(n));
+    for(int i=0;i<m;i++){
+        for(int j=0;j<n;j++){
+            for(int k=0;k<x[0].size();k++){
+                result[i][j] += w[k][j]*x[i][k] + b[0][j];
+            }
+            if (result[i][j]<=0) result[i][j] = 0;
+        }
+    }
+    outputs[layer_id] = result;
+    return;
+}
+
+mat2d normalInit(int m, int n){
     // static unsigned seed = 0;
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     default_random_engine generator (seed);
     normal_distribution<double> distribution (0.0,1.0);
-    vector<vector<double>> output(m, vector<double>(n));
+    mat2d output(m, vector<double>(n));
     for(int i=0;i<m;i++){
         for(int j=0;j<n;j++){
             output[i][j] = .1*distribution(generator);
@@ -153,7 +176,7 @@ void Net::init_params(int N, int D, int M){
     cout << "Topology:" << endl;
     cout << "Input: " << N << " x " <<  D << endl;
     for(int i=1;i<num_layers;i++){
-        vector<vector<double>> zeros(nodes[i-1]+1, vector<double>(nodes[i]));
+        mat2d zeros(nodes[i-1]+1, vector<double>(nodes[i]));
         weights[i]    = normalInit(nodes[i-1]+1, nodes[i]);
         derivatives[i]= zeros;
         prev_grad[i]  = zeros;
@@ -162,35 +185,35 @@ void Net::init_params(int N, int D, int M){
     return;
 }
 
-mat2d Net::linearForward(mat2d &layer_input, mat2d &param, string activation){
+void Net::linearForward(mat2d &layer_input, mat2d &param, string activation, int layer_id){
+    clock_t start;
     int D = param.size() - 1;
-    mat2d layer_output;
+    start=clock();
     mat2d bias = sliceMatrix(param, D, 0, D+1, 0);
+    // cout << ( clock() - start ) / (double) CLOCKS_PER_SEC << endl;
+    start=clock();
     mat2d weight_sans_bias = sliceMatrix(param,0,0,D,0);
-    mat2d temp = matadd(matmul(layer_input, weight_sans_bias), bias);
-    
-    if (activation=="relu") layer_output = relu(temp);
-    else layer_output = sigmoid(temp);
-    
-    return layer_output;
+    // cout << ( clock() - start ) / (double) CLOCKS_PER_SEC << endl;
+    start=clock();
+    if (activation=="relu" && param[0].size()!=1) relu(matadd(matmul(layer_input, weight_sans_bias), bias), layer_id);
+    // if (activation=="relu" && param[0].size()!=1) relu2(layer_input, weight_sans_bias, bias, layer_id);
+    else sigmoid(matadd(matmul(layer_input, weight_sans_bias), bias),layer_id);
+    // cout << ( clock() - start ) / (double) CLOCKS_PER_SEC << endl;
 }
 
 void Net::forward(mat2d &x){
     outputs[0] = x;
-    for(int i=1;i<num_layers;i++){
-        outputs[i] = linearForward(outputs[i-1], weights[i], activation);
-    }
+    for(int i=1;i<num_layers;i++) linearForward(outputs[i-1], weights[i], activation, i);
     return;
 }
 
-mat2d Net::linearBackward(mat2d &received_msg, int layer_id, bool is_output_layer){
-    mat2d layer_param  = weights[layer_id];
+void Net::linearBackward(mat2d &received_msg, int layer_id, bool is_output_layer){
+    
     mat2d layer_output = outputs[layer_id];
-    mat2d layer_input  = outputs[layer_id-1];
-    int N = layer_input.size();
-    int Di = layer_input[0].size();
-    int Do = layer_output[0].size();
-    if(is_output_layer){
+    double N = outputs[layer_id-1].size();
+    double Di = outputs[layer_id-1][0].size();
+    double Do = layer_output[0].size();
+    if(!is_output_layer){
         if(activation=="relu"){
             for(int i=0;i<received_msg.size();i++){
                 for(int j=0;j<received_msg[0].size();j++){
@@ -199,11 +222,11 @@ mat2d Net::linearBackward(mat2d &received_msg, int layer_id, bool is_output_laye
             }
         }
         else{
-            received_msg = elementwisemult(received_msg, elementwisemult(layer_output, 1 - (-1*layer_output)));
+            received_msg = elementwisemult(received_msg, elementwisemult(layer_output, 1 - layer_output));
         }
     }
 
-    mat2d d1 = (1/N)*matmul(layer_input, received_msg, true, false);
+    mat2d d1 = (1/N)*matmul(outputs[layer_id-1], received_msg, true, false);
     vector<double> d2 = (1/N)*matsum(received_msg, 0);
 
     for(int i=0;i<Di+1;i++){
@@ -212,9 +235,9 @@ mat2d Net::linearBackward(mat2d &received_msg, int layer_id, bool is_output_laye
             else derivatives[layer_id][i][j] = d2[j];
         }
     }    
-    mat2d param_sans_bias = sliceMatrix(layer_param,0,0,Di,Do);
-    mat2d sent_msg = matmul(received_msg, param_sans_bias, false, true);
-    return sent_msg;
+    mat2d param_sans_bias = sliceMatrix(weights[layer_id],0,0,Di,Do);
+    received_msg = matmul(received_msg, param_sans_bias, false, true);
+    return;
     
 }
 
@@ -222,17 +245,17 @@ void Net::backward(mat2d &y){
     bool is_output_layer = true;
     mat2d send_msg = matadd(outputs[num_layers-1],-1*y);
     for(int i=num_layers-1;i>0;i--){
-        send_msg = linearBackward(send_msg, i, is_output_layer);
+        linearBackward(send_msg, i, is_output_layer);
         is_output_layer = false;
     }
     return;
 }
 
 double Net::calc_loss(mat2d &y){
-    vector<vector<double> > ypred = outputs[num_layers-1];
+    mat2d ypred = outputs[num_layers-1];
     
     double cls_loss = 0;
-    vector<vector<double> > total_loss = elementwisemult(y,log2d(ypred)) + elementwisemult(1-1*y,log2d(1-1*ypred));
+    mat2d total_loss = elementwisemult(y,log2d(ypred)) + elementwisemult(1-y,log2d(1-ypred));
     
     for(int i=0;i<total_loss.size();i++){
         cls_loss = cls_loss - total_loss[i][0];
@@ -249,14 +272,14 @@ double Net::calc_loss(mat2d &y){
 
 void Net::updateParam(){
     for(int i=num_layers-1;i>0;i--){
-        prev_grad[i] = momentum*prev_grad[i] + -1*lr*derivatives[i];
-        weights[i] = weights[i] + -1*prev_grad[i];
+        prev_grad[i] = momentum*prev_grad[i] + (-1*lr*derivatives[i]);
+        weights[i] = weights[i] + prev_grad[i];
     }
     return;
 }
 
 double Net::calc_error(mat2d &ytrue){
-    vector<vector<double> > ypred = outputs[num_layers-1];
+    mat2d ypred = outputs[num_layers-1];
     double error = 0;
     for(int i=0;i<ypred.size();i++){
         if (ypred[i][0]>=threshold) ypred[i][0] = 1;
@@ -266,8 +289,9 @@ double Net::calc_error(mat2d &ytrue){
     return error/ypred.size();
 }
 
-mat2d Net::predictions(mat2d &x, mat2d &y){
-    vector<vector<double> > ypred = outputs[num_layers-1];
+mat2d Net::predictions(mat2d &x){
+    forward(x);
+    mat2d ypred = outputs[num_layers-1];
     for(int i=0;i<ypred.size();i++){
         if (ypred[i][0]>=threshold) ypred[i][0] = 1;
         else ypred[i][0] = 0;
@@ -289,34 +313,37 @@ int main(){
     //            {1}};
 
     TrainingData train_data, test_data;
-    train_data.load_data("mnist_test.csv",10);
+    
+    train_data.load_data("train.csv",2);
     cout << "Training data read!" << endl;
-    test_data.load_data("mnist_test.csv",10);
+    test_data.load_data("test.csv",2);
     cout << "Test data read!" << endl;
     Net net;
     
     int N = train_data.data.x.size();
     int D = train_data.data.x[0].size();
     int M = train_data.data.y[0].size();
-    int batchsize = 100;
-
+    int batchsize = N;
     net.init_params(N,D,M);
     cout << "Neural Network Built!" << endl;
     int iters = 0;
-    
-    while(iters<net.iterations){      
+    clock_t start;
+    double duration;
 
-        Data batch = train_data.getBatch(batchsize);
-        net.forward(batch.x);
-        net.backward(batch.y);
-        net.updateParam();
+    while(iters<net.iterations){      
         
-        cout << "Iteration: " << iters << " Batch Loss: " << net.calc_loss(batch.y) << endl;
+        Data batch = train_data.getBatch(batchsize);
+        start = clock();
+        net.forward(batch.x);
+        // cout << ( clock() - start ) / (double) CLOCKS_PER_SEC << endl;
+        start = clock();
+        net.backward(batch.y);
+        // cout << ( clock() - start ) / (double) CLOCKS_PER_SEC << endl;
+        start = clock();
+        net.updateParam();
+        // cout << ( clock() - start ) / (double) CLOCKS_PER_SEC << endl;
+        cout << "Iteration: " << iters << "| Batch Loss: " << net.calc_loss(batch.y) << " | Batch Error: " << net.calc_error(batch.y) << endl;
         
         iters++;
     }
-
-    // mat2d a = {{1,2,3},{3,4,7},{7,8,9}};
-    // mat2d b = {{1,3},{1,3}};
-    // mat2d c = {{1,3,4}};
 }
